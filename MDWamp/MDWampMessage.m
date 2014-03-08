@@ -18,14 +18,10 @@
 //  limitations under the License.
 //
 
-
-
 #import "MDWampMessage.h"
-#import "MDJSONBridge.h"
+
 @implementation MDWampMessage
 @synthesize type;
-
-
 
 /*
  * return the first element from the messageStack and removes it from the stack
@@ -65,7 +61,10 @@
 
 - (id) initWithResponse:(NSString*)response
 {
-	NSArray *responseArray = (NSArray*)[MDJSONBridge objectFromJSONString:response];
+    NSData *data = [response dataUsingEncoding:NSUTF8StringEncoding];
+	NSArray *responseArray = (NSArray*)[NSJSONSerialization JSONObjectWithData:data
+                                                                       options:NSJSONReadingAllowFragments
+                                                                         error:nil];
 	return [self initWithResponseArray:responseArray];
 }
 

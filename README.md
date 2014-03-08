@@ -5,44 +5,43 @@ It use [SocketRocket][socket_rocket] as WebSocket Protocol implementation.
 
 With this library and with a server [implementation of WAMP protocol][wamp_impl] you can bring Real-time notification not only for a web app (as WebSocket was created for) but also on your mobile App, just like an inner-app Apple Push Notifcation Service, avoiding the hassle of long polling request to the server for getting new things.
 
-It is distributed as a iOS Fake Framework, a hack to bundle a staic library as a Framework on iOS (courtesy of the [nice work of kstenerud][ios_fake_framework_link] ) which simplify how you have to integrate this code into your existing app.
-
-## Installation
-
-You have two main option to integrate the lib in your project:
-
-- Building it from source
-- Download a pre-compiled framework
-
-For both option notice that the library will use the native `NSJSONSerialization` to manage json objects, which is only available on iOS 5 and above, but the library is still compatible with iOS 4.x by switching to a runtime support to [JSONKit][jsonkit]. 
-
-But in order for this fallback to work you **must manually include JSONKit by yourself** within the project, otherwise the lib will Raise an Exception (trick thanks to viewing [Luke Redpath][luke]'s code).
-
-### Building from source
-
-*(from [iOS Universal Framework Mk 7](https://github.com/kstenerud/iOS-Universal-Framework#building-your-ios-framework))*
-
-1. Select your framework's scheme (any of its targets will do).
-2. (optional) Set the "Run" configuration in the scheme editor. It's set to Debug by default but you'll probably want to change it to "Release" when you're ready to distribute your framework.
-3. Build the framework (both "iOS device" and "Simulator" destinations will build the same universal binary, so it doesn't matter which you select).
-4. Select your framework under "Products", then show in Finder.
-5. Drag the `MDWamp.framework` folder in your project
-6. Use it in your code by `#import <MDWamp/MDWamp.h>`
-
-### pre-compiled framework
-
-1. Download latest zip from [here](https://dl.dropbox.com/u/143623815/MDWamp/MDWamp.framework-1.0.zip)
-2. Unzip it
-3. Drag the `MDWamp.framework` folder in your project
-4. Use it in your code by `#import <MDWamp/MDWamp.h>`
-
-## Getting Started
-
 WAMP in its creator words is:
 
 > an open WebSocket subprotocol that provides two asynchronous messaging patterns: RPC and PubSub.
 
-but what are RPC and PubSub? they give a [nice and neat explanation][faq] if you have doubts
+but what are RPC and PubSub? here's a [nice and neat explanation][faq] if you have doubts.
+
+
+## Changes
+
+### 1.1.0
+
+- Added OSX framework target
+- dropped iOS 4 compatibility now iOS >= 5.0 is required
+- added block callback for connection, rpc and pub/sub messages
+- removed RPC and Event delegates (now they only works with blocks)
+- added unit test
+
+## Installation
+
+### OSX
+- By using [CocoaPods][cocoapods], just add to your Podfile
+
+	pod 'MDWamp'
+
+- Use MDWamp.framework  
+Build the framework target of the project, just be sure to `git submodule init && git submodule update` to get the SocketRocket dependancy (see test part for more info)
+
+
+# iOS
+I'm [sick and tired of iOS shitting support for distributing libraries][staticlibpost] so just cocoapods support for ya:
+Just add this to your Podfile
+
+	pod "MDwamp" 
+
+
+
+## API
 
 MDWamp is made of a main class `MDWamp` that does all the work it makes connection to the server and expose methods to publish an receive events to and from a topic, and to call Rempte Procedure.
 
@@ -78,31 +77,34 @@ Called when client connect to the server
 - `- (void) onClose:(int)code reason:(NSString *)reason;`    
 Called when client disconnect from the server
 
-### usage examples
+You can also provide similar callback instead of using the delegate:
+
+	@property (nonatomic, copy) void (^onConnectionOpen)(MDWamp *client);
+	@property (nonatomic, copy) void (^onConnectionClose)(MDWamp *client, NSInteger code, NSString *reason);
+
 The Header files of `MDWamp` class and of the Delegates are all well commented so the API is trivial, anyway here are some usage examples
 
-*Call a remote procedure:*
+### Call a remote procedure:
 
-	[wamp call:@"http://example.com/calc#add" withDelegate:self args:[NSNumber numberWithInt:8],[NSNumber numberWithInt:8], nil];
+	[_wc call:@"http://example.com/simple/calc#add" complete:^(NSString *callURI, id result, NSError *error) {
+	    if (error== nil) {
+	        // do something with result
+	    } else {
+	        // handle the error
+	    }
+	} args:@2, @3, nil];
 
-*Receive the call result / error by implementing the delegates method:*
-
-	- (void) onResult:(id)result forCalledUri:(NSString *)callUri;
-	- (void) onError:(NSString *)errorUri description:(NSString*)errorDesc forCalledUri:(NSString *)callUri;
-
-*Publish to a topic a this json object `{"user" : ["foo", "bar"]}`:*
+### Publish to a topic] this json object `{"user" : ["foo", "bar"]}`:
 
 	[wamp publish:[NSDictionary dictionaryWithObjectsAndKeys:[NSArray arrayWithObjects:@"foo", @"bar", nil],@"user", nil] toTopic:@"http://example.com/simple" excludeMe:NO];
 
-*Subscribe to a Topic:*
+### Subscribe to a Topic and handle received events:
 
-	[wamp subscribeTopic:@"http://example.com/simple" withDelegate:self];
+	[client subscribeTopic:@"http://example.com/simple/simple" onEvent:^(id payload) {
+        // do something with the payload
+    }];
 
-*And receive Events from that topic implementing tis delegate metod:*
-	
-	- (void) onEvent:(NSString *)topicUri eventObject:(id)object;
-
-*Authenticate using WAMP-CRA:*
+### Authenticate using WAMP-CRA:
 
 	- (void) onOpen
 	{
@@ -123,14 +125,56 @@ The Header files of `MDWamp` class and of the Delegates are all well commented s
 	- (void) onAuthWithAnswer:(NSString *)answer;
 	- (void) onAuthFailForCall:(NSString *)procCall withError:(NSError *)error;
 
+### Authenticate using WAMP-CRA (Block-based):
+
+	- (void) onOpen
+	{
+		[wamp authWithKey:key Secret:secret Extra:nil 
+			Success:^(NSString *answer) {
+				NSLog(@"Authenticated");
+    		} Error:^(NSString *procCall, NSString *errorURI, NSString *errorDetails) {
+        		NSLog(@"Auth Fail:%@:%@",errorURI,errorDetails);
+    		}
+	   	];
+	}
+
+
+## Test
+If you want to run the tests you have to add the SocketRockt dependancy this is handled by using submodules so:
+
+- clone the repository: `git clone git@github.com:mogui/MDWamp.git`
+- `cd MDWamp`
+- run a `git submodule init && git submodule update` inside the MDWamp cloned directory to init the SocketRocket dependancy. 
+
+Once everything compiles smoothly, you need a WAMP server to test against.  
+The creator of the specification also have a nice test suite tool [autobahn test suite](http://autobahn.ws/testsuite/installation/) (it's for WebSocket in general not only WAMP)   
+The WAMP part though is undere heavy development nowdays for the new specification (WAMP v2) and not everuyhting works as it should, so temporarily, and just for the sake of the test, I suggest you to install it from my fork [over here](https://github.com/mogui/AutobahnTestSuite)  
+As for everything python I suggest to make a `virtualenv`
+
+	git clone git://github.com/mogui/AutobahnTestSuite.git
+	cd AutobahnTestSuite
+	git checkout mdwamp
+	cd autobahntestsuite
+	python setup.py install
+
+Finally you can start the test server:
+
+	wstest -d -m wampserver -w ws://localhost:9000
+
+and run the test target from Xcode.
+
+##Authors
+- [mogui](https://github.com/mogui/)
+- [cvanderschuere](https://github.com/cvanderschuere)
+- [JohnFricker](https://github.com/JohnFricker)
 
 ## Copyright
 Copyright © 2012 Niko Usai. See LICENSE for details.   
-WAMP and is trademark of [Tavendo GmbH][tavendo].
+WAMP is trademark of [Tavendo GmbH][tavendo].
 
 [wamp_link]: http://wamp.ws/
 [wamp_impl]: http://wamp.ws/implementations
-[jsonkit]: https://github.com/johnezang/JSONKit
+[cocoapods]: http://cocoapods.org/
 [luke]: https://github.com/lukeredpath
 [ios_fake_framework_link]: https://github.com/kstenerud/iOS-Universal-Framework
 [lib_pusher]: https://github.com/lukeredpath/libPusher
@@ -138,3 +182,4 @@ WAMP and is trademark of [Tavendo GmbH][tavendo].
 [downpage]: http://github.com/mogui/MDWamp/downloads]
 [faq]: http://wamp.ws/faq#rpc
 [tavendo]: http://www.tavendo.de/
+[staticlibpost]: http://blog.mogui.it/iOS-3rd-packaging.html
